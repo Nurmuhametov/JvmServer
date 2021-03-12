@@ -1,0 +1,16 @@
+1. CONNECTION {"LOGIN":"имя_пользователя"} - {"MESSAGE:"LOGIN OK"} или {"MESSAGE":"LOGIN FAILED"}
+2. DISCONNECT {"QUIT":""} - {"MESSAGE":"BYE"}
+3. GET LOBBY -
+{"DATA":[{"_id":"string","width":int,"height":int,"gameBarrierCount":int,"playerBarrierCount":int,"name":string,"players_count":int}],"SUCCESS":boolean}
+4. POST LOBBY
+{"width":int,"height":int,"gameBarrierCount":int,"playerBarrierCount":int,"name":string,"players_count":int}
+- {"id": string}
+5. POST DELETELOBBY {"id": string} - {"MESSAGE": "DELETE OK"}
+6. GET RANDOMLOBBY - {"id":string}
+7. SOCKET STARTGAME {"move": boolean, "width": int,"height":int, "position":[int,int],
+"opponentPosition":[int, int], "barriers": [[[int,int],[int,int],[int,int],[int,int]],....]]}
+8. SOCKET JOINLOBBY {"id":string} - {"DATA":{"_id":"string","width":int,"height":int,"gameBarrierCount":int,"playerBarrierCount":int,"name":string,"players_count":int},"SUCCESS":boolean}
+9. SOCKET STEP { "width": int,"height":int, "position":[int,int], "opponentPosition":[int, int], "barriers": [[[int,int],[int,int],[int,int],[int,int]],....]]}
+10. SOCKET ENDGAME { "width": int,"height":int, "position":[int,int], "opponentPosition":[int, int], "barriers": [[[int,int],[int,int],[int,int],[int,int]],....]]}
+11. SOCKET LEAVELOBBY - {"MESSAGE": "OK"}
+12. GET STATS - [["name":string, "points": int],...]
