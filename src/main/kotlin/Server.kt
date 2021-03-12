@@ -1,13 +1,12 @@
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.*
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.net.ServerSocket
 import java.net.Socket
+import java.net.SocketException
 import java.sql.*
 import java.util.*
-import kotlin.concurrent.thread
 import kotlin.random.Random
 import kotlin.system.exitProcess
 //Класс сервера
@@ -179,22 +178,22 @@ class Server private constructor(argsParser: ArgsParser){
     private val connectedClient = mutableListOf<ConnectedClient>() //список подключенных клиентов (онлайн)
     private val lobbies: MutableMap<String, Lobby> = mutableMapOf()
     private var expectingClient: ConnectedClient? = null
+    private val communicationProcess : Job
     private val serverSocket: ServerSocket
-    private var stop = false //флаг остановлен ли сервер. По умолчанию - нет
     private val connection : Connection//соединение с mysql
     private val port: Int = argsParser.serverPort
     private val host = argsParser.mariaAddress
     private val dbPort = argsParser.mariaPort //порт, на котором напущена mariaDB
     private val dbName = argsParser.dbName //название БД в mariaDB
     private val stmt: Statement
+    private var stop = false
 
     init{
         serverSocket = ServerSocket(port)
         //TODO(Исправить на ввод с клавиатуры)
         print("Логин пользовотеля от СУБД: ")
-        val login = argsParser.dbLogin
-        print("Пароль от СУБД: ")
-        val psw = argsParser.dbPassword
+        val login = readLine()// ?: argsParser.dbLogin
+        val psw = System.console()?.readPassword("Пароль от СУБД: ") ?: readLine()
         val connectionProperties = Properties()
         connectionProperties["user"] = login
         connectionProperties["password"] = psw
@@ -210,10 +209,39 @@ class Server private constructor(argsParser: ArgsParser){
         }
         stmt = connection.createStatement()
         println("SERVER STARTED")
-        thread {
-            while (!stop) {
-                acceptClient()
+
+        communicationProcess = GlobalScope.launch {
+            try { communicate() }
+            catch (ex:SocketException) {
+                println("SERVER STOPPED")
             }
+            finally {
+                connectedClient.forEach {
+                    it.communicator.sendData(Json.encodeToString(Message("BYE")))
+                    it.communicator.stop()
+                    println("${it.name} have been disconnected")
+                }
+            }
+        }
+
+        GlobalScope.launch {
+            while (!stop) {
+                val msg = readLine()
+                if(msg == "exit") {
+                    stop = true
+                    serverSocket.close()
+                }
+            }
+        }
+        runBlocking {
+            communicationProcess.join()
+        }
+    }
+
+    private fun communicate() {
+        while (!stop) {
+            acceptClient()
+            println("кря-кря")
         }
     }
 

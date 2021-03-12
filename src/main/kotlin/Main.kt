@@ -7,7 +7,7 @@ import java.io.File
 data class ArgsParser(val serverPort: Int, val mariaAddress: String, val mariaPort : Int, val dbName :String, val dbLogin : String, val dbPassword: String)
 
 const val CONFIG_PATH = "build/resources/main/config.json"
-fun main() {
+fun main(argv: Array<String>) {
     val json = File(CONFIG_PATH).readLines()
     val data = json.joinToString(separator = "")
     val argsParser = Json.decodeFromString<ArgsParser>(data)
