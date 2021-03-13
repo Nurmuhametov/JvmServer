@@ -38,7 +38,6 @@ class Server private constructor(argsParser: ArgsParser){
 
         private fun dataReceived(data: String){
             val vls = data.split(Regex("(?<=[A-Z]) (?=\\{.+\\})"),limit = 2)
-            println("Command: ${vls[0]}, data:")
             if (vls.isNotEmpty()){
                 when (vls[0]){
                     "CONNECTION" -> login(vls[1])
@@ -103,9 +102,6 @@ class Server private constructor(argsParser: ArgsParser){
                 return
             }
             val lobbyInfo = Json.decodeFromString<LobbyInfo>(data)
-//            val rs = stmt.executeQuery("""
-//                INSERT INTO lobbies (width, height, gameBarrierCount, playerBarrierCount, name, playersCount)
-//                VALUES (${lobbyInfo.players_count}, ${lobbyInfo.height},${lobbyInfo.gameBarrierCount},${lobbyInfo.playerBarrierCount},${lobbyInfo.name}),${lobbyInfo.players_count} """)
             val rs = connection.createStatement(ResultSet.TYPE_SCROLL_SENSITIVE, ResultSet.CONCUR_UPDATABLE).executeQuery(
                 "SELECT * FROM lobbies"
             )
@@ -125,14 +121,6 @@ class Server private constructor(argsParser: ArgsParser){
                 }
             }
             updateLobbies()
-//            val rss = stmt.executeQuery("SELECT ID FROM lobbies WHERE name='${lobbyInfo.name}'")
-//            if (rss.next()){
-//                communicator.sendData(Json.encodeToString(LobbyID(rss.getInt("ID").toString())))
-//                lobbies[rss.getInt("ID")] = Lobby(lobbyInfo)
-//            }
-//            else {
-//                communicator.sendData(Json.encodeToString(Message("POST LOBBY FAILED")))
-//            }
         }
 
         private fun getRandomLobby() {
@@ -341,7 +329,6 @@ class Server private constructor(argsParser: ArgsParser){
     }
 
     private suspend fun playGame(player1: ConnectedClient, player2: ConnectedClient, lobbyInfo: LobbyInfo) {
-        println("ENTERED PLAY GAME")
         val random = Random(System.currentTimeMillis())
         val (first, second) = if (random.nextBoolean()) {
             Pair(player1, player2)
@@ -349,7 +336,6 @@ class Server private constructor(argsParser: ArgsParser){
         else {
             Pair(player2, player1)
         }
-        println("EVERYTHING OK!")
         val sql = when(Game(first, second, lobbyInfo).startGame()) {
             GameEndings.FIRST ->
             {"INSERT INTO ${dbName}.game_results (`first`, `second`, `result`) " +
