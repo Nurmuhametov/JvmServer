@@ -14,7 +14,7 @@ data class LobbyInfo(val _id: String? = null,
                      val name: String,
                      val players_count: Int)
 @Serializable
-data class GetLobbyResponse(val DATA: MutableList<LobbyInfo>, val SUCCESS: Boolean)
+data class GetLobbyResponse(val DATA: List<LobbyInfo>, val SUCCESS: Boolean)
 @Serializable
 data class LobbyID(val id: String)
 @Serializable
@@ -23,7 +23,7 @@ data class StartGameInfo(val move: Boolean,
                          val height: Int,
                          val position: List<Int>,
                          val opponentPosition: List<Int>,
-                         val barriers: Set<Obstacle>)
+                         val barriers: Set<Array<Array<Int>>>)
 @Serializable
 class Obstacle private constructor (val from1: Position, val to1: Position, val from2: Position, val to2: Position) {
     constructor(array: List<Position>) : this(array[0], array[1], array[2], array[3])
@@ -37,9 +37,12 @@ class Obstacle private constructor (val from1: Position, val to1: Position, val 
     }
     val allString = listOf(from1.first, from2.first, to1.first, to2.first)
     val allColumns = listOf(from1.second, from2.second, to1.second, to2.second)
+    fun toCast() : Array<Array<Int>> {
+        return arrayOf(arrayOf(from1.first, from1.second),arrayOf(to1.first, to1.second),arrayOf(from2.first, from2.second),arrayOf(to2.first, to2.second))
+    }
  }
 @Serializable
-data class Field(val width: Int, val height: Int, val position: Position, val opponentPosition: Position, val barriers: Set<Obstacle>)
+data class Field(val width: Int, val height: Int, val position: List<Int>, val opponentPosition: List<Int>, val barriers: Set<Array<Array<Int>>>)
 @Serializable
 data class Stats(val name: String, val points: Int)
 @Serializable

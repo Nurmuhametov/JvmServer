@@ -62,12 +62,12 @@ class Game(private val player1: Server.ConnectedClient,
             return ex.gameEndings
         }
         with(field) {
-            if(position.first == height - 1) {
+            if(position[0] == height - 1) {
                 log += "Победил ${player1.name}"
                 writeLog()
                 return GameEndings.FIRST
             }
-            else if(opponentPosition.first == 1) {
+            else if(opponentPosition[0] == 1) {
                 log += "Победил ${player2.name}"
                 writeLog()
                 return GameEndings.SECOND
@@ -114,7 +114,7 @@ class Game(private val player1: Server.ConnectedClient,
         if (turns >= MAX_TURNS) return true
         val player1Position = if (whoseTurn == player1) field.position else field.opponentPosition
         val player2Position = if (whoseTurn == player1) field.opponentPosition else field.position
-        if(player1Position.first == field.height || player2Position.first == 1) return true
+        if(player1Position[0] == field.height || player2Position[0] == 1) return true
         return false
     }
 
@@ -131,7 +131,8 @@ class Game(private val player1: Server.ConnectedClient,
             if(!(isPathExists(position1, barriers) && isPathExists(position2, barriers))) continue
             barriers.add(newObstacle)
         }
-        return Field(lobbyInfo.width, lobbyInfo.height, position1, position2, barriers)
+        val newBarrier = barriers.map { it.toCast() }
+        return Field(lobbyInfo.width, lobbyInfo.height, position1.toList(), position2.toList(), newBarrier.toSet())
     }
 
     private fun randomObstacleFromCell(position: Position, random: Int) : Obstacle {
