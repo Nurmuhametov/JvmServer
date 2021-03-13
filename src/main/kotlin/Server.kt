@@ -59,13 +59,21 @@ class Server private constructor(argsParser: ArgsParser){
         }
 
         private fun login(data: String) {
-            //
+            val loginInfo = Json.decodeFromString<LoginInfo>(data)
+            val rs = stmt.executeQuery("SELECT * FROM ${dbName}.user WHERE login='${loginInfo.LOGIN}'")
+            if (rs.next()) {
+                name = rs.getString("login")
+                communicator.sendData(Json.encodeToString(Message("LOGIN OK")))
+            }
+            else {
+                communicator.sendData(Json.encodeToString(Message("LOGIN FAILED")))
+            }
         }
 
         private fun disconnect() {
             communicator.sendData(Json.encodeToString(Message("BYE")))
             communicator.stop()
-            println("User [${socket.inetAddress}] disconnected")
+            println("User [${socket.inetAddress}:${socket.port}] disconnected")
         }
 
         private fun getLobby() {
@@ -190,10 +198,18 @@ class Server private constructor(argsParser: ArgsParser){
 
     init{
         serverSocket = ServerSocket(port)
-        //TODO(Исправить на ввод с клавиатуры)
-        print("Логин пользовотеля от СУБД: ")
-        val login = readLine()// ?: argsParser.dbLogin
-        val psw = System.console()?.readPassword("Пароль от СУБД: ") ?: readLine()
+        val login : String
+        val psw : String
+        if (argsParser.loginFromFile) {
+            login = argsParser.dbLogin
+            psw = argsParser.dbPassword
+        }
+        else {
+            print("Login: ")
+            login = readLine() ?: argsParser.dbLogin
+            print("Password: ")
+            psw = readLine()  ?: argsParser.dbPassword
+        }
         val connectionProperties = Properties()
         connectionProperties["user"] = login
         connectionProperties["password"] = psw
@@ -209,9 +225,14 @@ class Server private constructor(argsParser: ArgsParser){
         }
         stmt = connection.createStatement()
         println("SERVER STARTED")
+        println("For exit type \"exit\"")
 
         communicationProcess = GlobalScope.launch {
-            try { communicate() }
+            try {
+                while (!stop) {
+                    acceptClient()
+                }
+            }
             catch (ex:SocketException) {
                 println("SERVER STOPPED")
             }
@@ -231,6 +252,7 @@ class Server private constructor(argsParser: ArgsParser){
                     stop = true
                     serverSocket.close()
                 }
+                else println("For exit type \"exit\"")
             }
         }
         runBlocking {
@@ -238,17 +260,10 @@ class Server private constructor(argsParser: ArgsParser){
         }
     }
 
-    private fun communicate() {
-        while (!stop) {
-            acceptClient()
-            println("кря-кря")
-        }
-    }
-
     private fun acceptClient() {
         println("Ожидание подключения")
         val s = serverSocket.accept()
-        println("Новый клиент подключен [${s.inetAddress}]")
+        println("Новый клиент подключен [${s.inetAddress}:${s.port}]")
         connectedClient.add(ConnectedClient(s))
     }
 
@@ -262,13 +277,13 @@ class Server private constructor(argsParser: ArgsParser){
         }
         val sql = when(Game(first, second, lobbyInfo).startGame()) {
             GameEndings.FIRST ->
-            {"INSERT INTO `game_results` (`first`, `second`, `result`) " +
+            {"INSERT INTO ${dbName}.game_results (`first`, `second`, `result`) " +
                     "VALUES ('${first.id}', '${second.id}', 'win')"}
             GameEndings.SECOND ->
-            {"INSERT INTO `game_results` (`first`, `second`, `result`) " +
+            {"INSERT INTO ${dbName}`game_results` (`first`, `second`, `result`) " +
                     "VALUES ('${first.id}', '${second.id}', 'lost')"}
             GameEndings.DRAW ->
-            {"INSERT INTO `game_results` (`first`, `second`, `result`) " +
+            {"INSERT INTO ${dbName}`game_results` (`first`, `second`, `result`) " +
                     "VALUES ('${first.id}', '${second.id}', 'draw')"}
         }
         stmt.executeQuery(sql)

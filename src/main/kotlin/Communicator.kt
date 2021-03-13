@@ -35,7 +35,6 @@ class Communicator(
             } catch (e: SocketException){
                 active = false
                 if (!socket.isClosed) socket.close()
-                println("Обмен данными неожиданно прекращен!")
             }
         }
     }
@@ -46,7 +45,6 @@ class Communicator(
                 val br = BufferedReader(InputStreamReader(socket.getInputStream()))
                 br.readLine()
             } catch (e: SocketException) {
-                println("Не удалось прочитать данные из сети")
                 active = false
                 null
             }
@@ -61,7 +59,6 @@ class Communicator(
                 pw.flush()
             }
         } catch (e: SocketException){
-            println("Не удалось отправить данные в сеть")
             active = false
         }
     }
@@ -78,6 +75,7 @@ class Communicator(
     fun stop(){
         try{
             active = false
+            socket.close()
             if (communicationProcess?.isActive == true){
                 communicationProcess?.cancel()
             }
