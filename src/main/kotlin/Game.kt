@@ -32,8 +32,8 @@ class Game(private val player1: Server.ConnectedClient,
 //        player2.communicator.addDataReceivedListener(::gameConversation)
         log += "Игра между ${player1.name} и ${player2.name}"
         println("Игра между ${player1.name} и ${player2.name}")
-        player1.communicator.sendData(Json.encodeToString(StartGameInfo(true,field.width,field.height,field.position.toList())))
-        player2.communicator.sendData(Json.encodeToString(StartGameInfo(false,field.width,field.height,field.opponentPosition.toList())))
+        player1.communicator.sendData(Json.encodeToString(StartGameInfo(true,field.width,field.height,field.position.toList(),field.opponentPosition.toList(),field.barriers)))
+        player2.communicator.sendData(Json.encodeToString(StartGameInfo(false,field.width,field.height,field.opponentPosition.toList(),field.position.toList(),field.barriers)))
         val game = coroutineScope {
             async { playGame() }
         }
@@ -128,7 +128,7 @@ class Game(private val player1: Server.ConnectedClient,
             val y1 = random.nextInt(1, lobbyInfo.width)
             val newObstacle = randomObstacleFromCell(Position(x1, y1), random.nextInt(1,8))
             if(!isLegalObstacle(newObstacle,barriers)) continue
-            if(!(isPathExists(position1) && isPathExists(position2))) continue
+            if(!(isPathExists(position1, barriers) && isPathExists(position2, barriers))) continue
             barriers.add(newObstacle)
         }
         return Field(lobbyInfo.width, lobbyInfo.height, position1, position2, barriers)
@@ -149,13 +149,13 @@ class Game(private val player1: Server.ConnectedClient,
         })
     }
 
-    private fun isPathExists(position: Position) : Boolean {
+    private fun isPathExists(position: Position, barriers: Set<Obstacle>) : Boolean {
         val goal = if(position.first == 1) lobbyInfo.height else 1
         val queue = LinkedList(mutableListOf(position))
         val visitedCells = mutableListOf(position)
         while (!queue.isEmpty()) {
             val current = queue.pop()
-            expandMoves(current).forEach {
+            expandMoves(current, barriers).forEach {
                 if (it.first == goal) return true
                 if (it != current && !visitedCells.contains(it)) {
                 queue.push(it)
@@ -165,18 +165,18 @@ class Game(private val player1: Server.ConnectedClient,
         return false
     }
 
-    private fun expandMoves(position: Position) : List<Position> {
+    private fun expandMoves(position: Position, barriers: Set<Obstacle>) : List<Position> {
         val moves = listOf(Position(position.first + 1, position.second), 
             Position(position.first, position.second + 1), 
             Position(position.first - 1, position.second), 
             Position(position.first, position.second - 1))
-        return moves.filter { isLegalMove(position, it) }
+        return moves.filter { isLegalMove(position, it, barriers) }
     }
 
-    private fun isLegalMove(currentPosition: Position, desiredPosition: Position) : Boolean {
+    private fun isLegalMove(currentPosition: Position, desiredPosition: Position, barriers: Set<Obstacle>) : Boolean {
         if (desiredPosition.first <= 0 || desiredPosition.first > lobbyInfo.height || desiredPosition.second <= 0 ||
                 desiredPosition.second > lobbyInfo.width) return false
-        if (field.barriers.any { it.stepOverObstacle(currentPosition, desiredPosition) }) return false
+        if (barriers.any { it.stepOverObstacle(currentPosition, desiredPosition) }) return false
         return true
     }
 
