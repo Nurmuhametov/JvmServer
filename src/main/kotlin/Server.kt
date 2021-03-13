@@ -37,7 +37,6 @@ class Server private constructor(argsParser: ArgsParser){
         }
 
         private fun dataReceived(data: String){
-            //Формат сообщений:  команда=данные
             val vls = data.split(Regex("(?<=[A-Z]) (?=\\{.+\\})"),limit = 2)
             println("Command: ${vls[0]}, data:")
             if (vls.isNotEmpty()){
@@ -78,7 +77,10 @@ class Server private constructor(argsParser: ArgsParser){
         }
 
         private fun getLobby() {
-            println("getting lobby")
+            if (name == null) {
+                communicator.sendData(Json.encodeToString(Message("LOGIN FIRST")))
+                return
+            }
             val rs = stmt.executeQuery("SELECT * FROM lobbies")
             val lobbies = mutableListOf<LobbyInfo>()
             while (rs.next()) {
@@ -97,6 +99,10 @@ class Server private constructor(argsParser: ArgsParser){
         }
 
         private fun postLobby(data: String) {
+            if (name == null) {
+                communicator.sendData(Json.encodeToString(Message("LOGIN FIRST")))
+                return
+            }
             val lobbyInfo = Json.decodeFromString<LobbyInfo>(data)
 //            val rs = stmt.executeQuery("""
 //                INSERT INTO lobbies (width, height, gameBarrierCount, playerBarrierCount, name, playersCount)
@@ -119,17 +125,22 @@ class Server private constructor(argsParser: ArgsParser){
                     println("Попытка создать лобби с уже существующим именем, ошибка")
                 }
             }
-            val rss = stmt.executeQuery("SELECT ID FROM lobbies WHERE name='${lobbyInfo.name}'")
-            if (rss.next()){
-                communicator.sendData(Json.encodeToString(LobbyID(rss.getInt("ID").toString())))
-                lobbies[rss.getInt("ID")] = Lobby(lobbyInfo)
-            }
-            else {
-                communicator.sendData(Json.encodeToString(Message("POST LOBBY FAILED")))
-            }
+            updateLobbies()
+//            val rss = stmt.executeQuery("SELECT ID FROM lobbies WHERE name='${lobbyInfo.name}'")
+//            if (rss.next()){
+//                communicator.sendData(Json.encodeToString(LobbyID(rss.getInt("ID").toString())))
+//                lobbies[rss.getInt("ID")] = Lobby(lobbyInfo)
+//            }
+//            else {
+//                communicator.sendData(Json.encodeToString(Message("POST LOBBY FAILED")))
+//            }
         }
 
         private fun getRandomLobby() {
+            if (name == null) {
+                communicator.sendData(Json.encodeToString(Message("LOGIN FIRST")))
+                return
+            }
             val rs = stmt.executeQuery("SELECT ID FROM lobbies")
             rs.last()
             val size = rs.row
@@ -143,11 +154,15 @@ class Server private constructor(argsParser: ArgsParser){
         }
 
         private fun joinLobby(data: String) {
+            if (name == null) {
+                communicator.sendData(Json.encodeToString(Message("LOGIN FIRST")))
+                return
+            }
             val lobbyID = Json.decodeFromString<LobbyID>(data)
             val rs = connection.createStatement(ResultSet.TYPE_SCROLL_SENSITIVE, ResultSet.CONCUR_UPDATABLE).executeQuery("SELECT * FROM lobbies WHERE ID = '${lobbyID.id}'")
             if(rs.next()){
                 val lobbyInfo = LobbyInfo(
-                    rs.getString("ID"),
+                    rs.getInt("ID").toString(),
                     rs.getInt("width"),
                     rs.getInt("height"),
                     rs.getInt("gameBarrierCount"),
@@ -169,7 +184,10 @@ class Server private constructor(argsParser: ArgsParser){
         }
 
         private fun getStats() {
-
+            if (name == null) {
+                communicator.sendData(Json.encodeToString(Message("LOGIN FIRST")))
+                return
+            }
         }
 
     }
@@ -241,6 +259,7 @@ class Server private constructor(argsParser: ArgsParser){
         stmt = connection.createStatement()
         println("SERVER STARTED")
         println("For exit type \"exit\"")
+        updateLobbies()
 
         communicationProcess = GlobalScope.launch {
             try {
@@ -272,6 +291,27 @@ class Server private constructor(argsParser: ArgsParser){
         }
         runBlocking {
             communicationProcess.join()
+        }
+    }
+
+    private fun updateLobbies() {
+        val rs = stmt.executeQuery("SELECT * FROM lobbies")
+        while(rs.next()){
+            val lobbyInfo = LobbyInfo(
+                rs.getInt("ID").toString(),
+                rs.getInt("width"),
+                rs.getInt("height"),
+                rs.getInt("gameBarrierCount"),
+                rs.getInt("playerBarrierCount"),
+                rs.getString("name"),
+                rs.getInt("playersCount")
+            )
+            try {
+                lobbies[rs.getInt("ID")]
+            }
+            catch (ex: IndexOutOfBoundsException) {
+                lobbies[rs.getInt("ID")] = Lobby(lobbyInfo)
+            }
         }
     }
 
