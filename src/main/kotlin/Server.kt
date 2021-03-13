@@ -39,7 +39,8 @@ class Server private constructor(argsParser: ArgsParser){
         private fun dataReceived(data: String){
             //Формат сообщений:  команда=данные
             val vls = data.split(Regex("(?<=[A-Z]) (?=\\{.+\\})"),limit = 2)
-            if (vls.size == 2){
+            println("Command: ${vls[0]}, data:")
+            if (vls.isNotEmpty()){
                 when (vls[0]){
                     "CONNECTION" -> login(vls[1])
                     "DISCONNECT" -> disconnect()
@@ -77,6 +78,7 @@ class Server private constructor(argsParser: ArgsParser){
         }
 
         private fun getLobby() {
+            println("getting lobby")
             val rs = stmt.executeQuery("SELECT * FROM lobbies")
             val lobbies = mutableListOf<LobbyInfo>()
             while (rs.next()) {
@@ -109,13 +111,21 @@ class Server private constructor(argsParser: ArgsParser){
                 updateInt("gameBarrierCount", lobbyInfo.gameBarrierCount)
                 updateInt("playerBarrierCount", lobbyInfo.playerBarrierCount)
                 updateString("name", lobbyInfo.name)
-                updateInt("players_count", lobbyInfo.players_count)
-                insertRow()
+                updateInt("playersCount", lobbyInfo.players_count)
+                try {
+                    insertRow()
+                }
+                catch (ex: SQLIntegrityConstraintViolationException) {
+                    println("Попытка создать лобби с уже существующим именем, ошибка")
+                }
             }
             val rss = stmt.executeQuery("SELECT ID FROM lobbies WHERE name='${lobbyInfo.name}'")
             if (rss.next()){
-                communicator.sendData(Json.encodeToString(LobbyID(rss.getString("ID"))))
-                lobbies[rss.getString("ID")] = Lobby(lobbyInfo)
+                communicator.sendData(Json.encodeToString(LobbyID(rss.getInt("ID").toString())))
+                lobbies[rss.getInt("ID")] = Lobby(lobbyInfo)
+            }
+            else {
+                communicator.sendData(Json.encodeToString(Message("POST LOBBY FAILED")))
             }
         }
 
@@ -129,13 +139,13 @@ class Server private constructor(argsParser: ArgsParser){
                 rs.next()
                 number -= 1
             }
-            communicator.sendData(Json.encodeToString(LobbyID(rs.getString("ID"))))
+            communicator.sendData(Json.encodeToString(LobbyID(rs.getInt("ID").toString())))
         }
 
         private fun joinLobby(data: String) {
             val lobbyID = Json.decodeFromString<LobbyID>(data)
             val rs = connection.createStatement(ResultSet.TYPE_SCROLL_SENSITIVE, ResultSet.CONCUR_UPDATABLE).executeQuery("SELECT * FROM lobbies WHERE ID = '${lobbyID.id}'")
-            if(rs.next() && rs.getInt("players_count") < 2){
+            if(rs.next()){
                 val lobbyInfo = LobbyInfo(
                     rs.getString("ID"),
                     rs.getInt("width"),
@@ -143,12 +153,15 @@ class Server private constructor(argsParser: ArgsParser){
                     rs.getInt("gameBarrierCount"),
                     rs.getInt("playerBarrierCount"),
                     rs.getString("name"),
-                    rs.getInt("players_count") + 1
+                    rs.getInt("playersCount")
                 )
-                rs.updateInt("players_count", lobbyInfo.players_count)
-                rs.updateRow()
-                communicator.sendData(Json.encodeToString(JoinLobbyResponse(lobbyInfo, true)))
-                lobbies[rs.getString("ID")]?.addPlayer(this)
+                if (!lobbies[rs.getInt("ID")]?.isPlaying!!) {
+                    communicator.sendData(Json.encodeToString(JoinLobbyResponse(lobbyInfo, true)))
+                    lobbies[rs.getInt("ID")]?.addPlayer(this)
+                }
+                else{
+                    communicator.sendData(Json.encodeToString(JoinLobbyResponse(LobbyInfo(lobbyID.id, -1, -1, -1, -1, "", -1), false)))
+                }
             }
             else {
                 communicator.sendData(Json.encodeToString(JoinLobbyResponse(LobbyInfo(null, -1, -1, -1, -1, "", -1), false)))
@@ -163,6 +176,7 @@ class Server private constructor(argsParser: ArgsParser){
 
     inner class Lobby(private val lobbyInfo: LobbyInfo) {
         private var expectingPlayer: ConnectedClient? = null
+        var isPlaying = false
 
         fun addPlayer(player : ConnectedClient) {
             if (expectingPlayer == null) {
@@ -170,6 +184,7 @@ class Server private constructor(argsParser: ArgsParser){
                 expectingPlayer?.myLobby = this
             }
             else {
+                isPlaying = true
                 GlobalScope.launch {
                     playGame(expectingPlayer!!, player, lobbyInfo)
                 }
@@ -184,7 +199,7 @@ class Server private constructor(argsParser: ArgsParser){
     }
 
     private val connectedClient = mutableListOf<ConnectedClient>() //список подключенных клиентов (онлайн)
-    private val lobbies: MutableMap<String, Lobby> = mutableMapOf()
+    private val lobbies: MutableMap<Int, Lobby> = mutableMapOf()
     private var expectingClient: ConnectedClient? = null
     private val communicationProcess : Job
     private val serverSocket: ServerSocket

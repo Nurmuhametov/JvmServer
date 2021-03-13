@@ -6,7 +6,7 @@ data class LoginInfo(val LOGIN: String)
 @Serializable
 data class Message(val MESSAGE: String)
 @Serializable
-data class LobbyInfo(val _id: String?,
+data class LobbyInfo(val _id: String? = null,
                      val width: Int,
                      val height: Int,
                      val gameBarrierCount: Int,
