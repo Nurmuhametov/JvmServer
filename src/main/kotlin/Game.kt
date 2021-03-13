@@ -31,6 +31,7 @@ class Game(private val player1: Server.ConnectedClient,
 //        player1.communicator.addDataReceivedListener(::gameConversation)
 //        player2.communicator.addDataReceivedListener(::gameConversation)
         log += "Игра между ${player1.name} и ${player2.name}"
+        println("Игра между ${player1.name} и ${player2.name}")
         player1.communicator.sendData(Json.encodeToString(StartGameInfo(true,field.width,field.height,field.position.toList())))
         player2.communicator.sendData(Json.encodeToString(StartGameInfo(false,field.width,field.height,field.opponentPosition.toList())))
         val game = coroutineScope {

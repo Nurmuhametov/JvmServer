@@ -7,6 +7,8 @@ import java.net.Socket
 import java.net.SocketException
 import java.sql.*
 import java.util.*
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.random.Random
 import kotlin.system.exitProcess
 //Класс сервера
@@ -28,7 +30,6 @@ class Server private constructor(argsParser: ArgsParser){
 
         val communicator: Communicator = Communicator(socket)
         var name: String? = null
-        var id = 0
         var myLobby : Lobby? = null
 
         init{
@@ -47,7 +48,6 @@ class Server private constructor(argsParser: ArgsParser){
                     "POST LOBBY" -> postLobby(vls[1])
                     "GET RANDOMLOBBY" -> getRandomLobby()
                     "SOCKET JOINLOBBY" -> joinLobby(vls[1])
-//                    "SOCKET STEP" -> myLobby?.makeStep(this, vls[1])
                     "SOCKET LEAVELOBBY" -> {
                         myLobby?.removePLayer(this)
                         communicator.sendData(Json.encodeToString(Message("OK")))
@@ -158,6 +158,10 @@ class Server private constructor(argsParser: ArgsParser){
                 communicator.sendData(Json.encodeToString(Message("LOGIN FIRST")))
                 return
             }
+            if (myLobby != null) {
+                myLobby?.removePLayer(this)
+                communicator.sendData(Json.encodeToString(Message("YOU LEFT PREVIOUS LOBBY")))
+            }
             val lobbyID = Json.decodeFromString<LobbyID>(data)
             val rs = connection.createStatement(ResultSet.TYPE_SCROLL_SENSITIVE, ResultSet.CONCUR_UPDATABLE).executeQuery("SELECT * FROM lobbies WHERE ID = '${lobbyID.id}'")
             if(rs.next()){
@@ -188,8 +192,13 @@ class Server private constructor(argsParser: ArgsParser){
                 communicator.sendData(Json.encodeToString(Message("LOGIN FIRST")))
                 return
             }
+            val rs = stmt.executeQuery("SELECT * FROM stats WHERE login='$name'")
+            val statistic = mutableListOf<Stats>()
+            while (rs.next()) {
+                statistic.add(Stats(rs.getString("opponent"), rs.getInt("points")))
+            }
+            communicator.sendData(Json.encodeToString(statistic))
         }
-
     }
 
     inner class Lobby(private val lobbyInfo: LobbyInfo) {
@@ -197,14 +206,21 @@ class Server private constructor(argsParser: ArgsParser){
         var isPlaying = false
 
         fun addPlayer(player : ConnectedClient) {
+            println("player ${player.name} joined the lobby ${lobbyInfo.name}")
             if (expectingPlayer == null) {
                 expectingPlayer = player
                 expectingPlayer?.myLobby = this
             }
             else {
                 isPlaying = true
-                GlobalScope.launch {
+                val game =  gamesContext.launch(Dispatchers.Unconfined) {
+                    println("COROUTINE STARTED")
                     playGame(expectingPlayer!!, player, lobbyInfo)
+                }
+                gamesContext.launch {
+                    game.join()
+                    stmt.execute("DELETE FROM lobbies WHERE ID = '${lobbyInfo._id}'")
+                    lobbies.remove(lobbyInfo._id?.toInt())
                 }
             }
         }
@@ -228,6 +244,7 @@ class Server private constructor(argsParser: ArgsParser){
     private val dbName = argsParser.dbName //название БД в mariaDB
     private val stmt: Statement
     private var stop = false
+    var gamesContext : CoroutineScope
 
     init{
         serverSocket = ServerSocket(port)
@@ -290,6 +307,7 @@ class Server private constructor(argsParser: ArgsParser){
             }
         }
         runBlocking {
+            gamesContext = CoroutineScope(EmptyCoroutineContext)
             communicationProcess.join()
         }
     }
@@ -307,12 +325,13 @@ class Server private constructor(argsParser: ArgsParser){
                 rs.getInt("playersCount")
             )
             try {
-                lobbies[rs.getInt("ID")]
+                lobbies[rs.getInt("ID")] = lobbies[rs.getInt("ID")] ?: Lobby(lobbyInfo)
             }
             catch (ex: IndexOutOfBoundsException) {
                 lobbies[rs.getInt("ID")] = Lobby(lobbyInfo)
             }
         }
+        println("Server has ${lobbies.size} lobbies at the time")
     }
 
     private fun acceptClient() {
@@ -323,6 +342,7 @@ class Server private constructor(argsParser: ArgsParser){
     }
 
     private suspend fun playGame(player1: ConnectedClient, player2: ConnectedClient, lobbyInfo: LobbyInfo) {
+        println("ENTERED PLAY GAME")
         val random = Random(System.currentTimeMillis())
         val (first, second) = if (random.nextBoolean()) {
             Pair(player1, player2)
@@ -330,16 +350,17 @@ class Server private constructor(argsParser: ArgsParser){
         else {
             Pair(player2, player1)
         }
+        println("EVERYTHING OK!")
         val sql = when(Game(first, second, lobbyInfo).startGame()) {
             GameEndings.FIRST ->
             {"INSERT INTO ${dbName}.game_results (`first`, `second`, `result`) " +
-                    "VALUES ('${first.id}', '${second.id}', 'win')"}
+                    "VALUES ('${first.name}', '${second.name}', 'first')"}
             GameEndings.SECOND ->
             {"INSERT INTO ${dbName}`game_results` (`first`, `second`, `result`) " +
-                    "VALUES ('${first.id}', '${second.id}', 'lost')"}
+                    "VALUES ('${first.name}', '${second.name}', 'second')"}
             GameEndings.DRAW ->
             {"INSERT INTO ${dbName}`game_results` (`first`, `second`, `result`) " +
-                    "VALUES ('${first.id}', '${second.id}', 'draw')"}
+                    "VALUES ('${first.name}', '${second.name}', 'draw')"}
         }
         stmt.executeQuery(sql)
     }
