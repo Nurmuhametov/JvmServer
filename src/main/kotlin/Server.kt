@@ -39,6 +39,7 @@ class Server private constructor(argsParser: ArgsParser){
         private fun dataReceived(data: String){
             val vls = data.split(Regex("(?<=[A-Z]) (?=\\{.+\\})"),limit = 2)
             if (vls.isNotEmpty()){
+                println(data)
                 when (vls[0]){
                     "CONNECTION" -> login(vls[1])
                     "DISCONNECT" -> disconnect()
@@ -69,6 +70,7 @@ class Server private constructor(argsParser: ArgsParser){
         }
 
         private fun disconnect() {
+            myLobby?.removePLayer(this)
             communicator.sendData(Json.encodeToString(Message("BYE")))
             communicator.stop()
             println("User [${socket.inetAddress}:${socket.port}] disconnected")
@@ -150,6 +152,10 @@ class Server private constructor(argsParser: ArgsParser){
                 communicator.sendData(Json.encodeToString(Message("YOU LEFT PREVIOUS LOBBY")))
             }
             val lobbyID = Json.decodeFromString<LobbyID>(data)
+            if (lobbyID.id == null) {
+                return
+                TODO("Расписание матчей")
+            }
             val rs = connection.createStatement(ResultSet.TYPE_SCROLL_SENSITIVE, ResultSet.CONCUR_UPDATABLE).executeQuery("SELECT * FROM lobbies WHERE ID = '${lobbyID.id}'")
             if(rs.next()){
                 val lobbyInfo = LobbyInfo(

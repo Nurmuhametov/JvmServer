@@ -16,7 +16,7 @@ data class LobbyInfo(val _id: String? = null,
 @Serializable
 data class GetLobbyResponse(val DATA: List<LobbyInfo>, val SUCCESS: Boolean)
 @Serializable
-data class LobbyID(val id: String)
+data class LobbyID(val id: String?)
 @Serializable
 data class StartGameInfo(val move: Boolean,
                          val width: Int,
