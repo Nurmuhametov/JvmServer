@@ -1,4 +1,5 @@
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
@@ -26,16 +27,28 @@ class Game(private val player1: Server.ConnectedClient,
     private var field = generateRandomField()
     private var turns = 0
     private var log = ""
+    private var channel = Channel<String>(1)
 
     suspend fun startGame(): GameEndings {
-        log += "Игра между ${player1.name} и ${player2.name}"
+        log += "Игра между ${player1.name} и ${player2.name}\n"
         println("Игра между ${player1.name} и ${player2.name}")
+        player1.communicator.addDataReceivedListener(::sendTurn)
+        player2.communicator.addDataReceivedListener(::sendTurn)
         player1.communicator.sendData("SOCKET STARTGAME" + Json.encodeToString(StartGameInfo(true,field.width,field.height,field.position.toList(),field.opponentPosition.toList(),field.barriers)))
         player2.communicator.sendData("SOCKET STARTGAME" + Json.encodeToString(StartGameInfo(false,field.width,field.height,field.opponentPosition.toList(),field.position.toList(),field.barriers)))
         val game = coroutineScope {
             async { playGame() }
         }
+        player1.communicator.removeDataReceivedListener(::sendTurn)
+        player2.communicator.removeDataReceivedListener(::sendTurn)
         return game.await()
+    }
+
+    private fun sendTurn(data : String) {
+        runBlocking {
+            channel.send(data)
+            println("Sent!")
+        }
     }
 
     private fun playGame() : GameEndings {
@@ -52,8 +65,16 @@ class Game(private val player1: Server.ConnectedClient,
         }
         catch (ex: WinByTimeout) {
             when(ex.gameEndings) {
-                GameEndings.FIRST -> log += "Победил ${player1.name} так как игрок ${player2.name} не ответил вовремя"
-                GameEndings.SECOND -> log += "Победил ${player2.name} так как игрок ${player1.name} не ответил вовремя"
+                GameEndings.FIRST -> {
+                    log += "Победил ${player1.name} так как игрок ${player2.name} не ответил вовремя\n"
+                    sendResults(player1, player2)
+                    writeLog()
+                }
+                GameEndings.SECOND -> {
+                    log += "Победил ${player2.name} так как игрок ${player1.name} не ответил вовремя\n"
+                    sendResults(player2, player1)
+                    writeLog()
+                }
                 GameEndings.DRAW -> Unit
             }
             writeLog()
@@ -61,32 +82,41 @@ class Game(private val player1: Server.ConnectedClient,
         }
         with(field) {
             if(position[0] == height - 1) {
-                log += "Победил ${player1.name}"
+                log += "Победил ${player1.name}\n"
+                sendResults(player1, player2)
                 writeLog()
                 return GameEndings.FIRST
             }
             else if(opponentPosition[0] == 0) {
-                log += "Победил ${player2.name}"
+                log += "Победил ${player2.name}\n"
+                sendResults(player2, player1)
                 writeLog()
                 return GameEndings.SECOND
             }
         }
-        log += "Ничья"
+        log += "Ничья\n"
+        val endGameInfo = EndGameInfo("draw", field.width, field.height, field.position, field.opponentPosition, field.barriers)
+        player1.communicator.sendData("SOCKET ENDGAME " + Json.encodeToString(endGameInfo))
+        player2.communicator.sendData("SOCKET ENDGAME " + Json.encodeToString(endGameInfo))
         writeLog()
         return GameEndings.DRAW
+    }
+
+    private fun sendResults(winner: Server.ConnectedClient, loser: Server.ConnectedClient) {
+        val endGameInfo = EndGameInfo("win", field.width, field.height, field.position, field.opponentPosition, field.barriers)
+        winner.communicator.sendData("SOCKET ENDGAME " + Json.encodeToString(endGameInfo))
+        endGameInfo.result = "lose"
+        loser.communicator.sendData("SOCKET ENDGAME " + Json.encodeToString(endGameInfo))
     }
 
     private fun makeTurn(first: Server.ConnectedClient, second: Server.ConnectedClient) : Boolean {
         log += if (first == player1) {
             Json.encodeToString(field)
         } else Json.encodeToString(swapPositions())
-
+        log += "\n"
         val playersTurn = runBlocking {
             withTimeoutOrNull(120000) {
-                runInterruptible {
-                    val br = BufferedReader(InputStreamReader(first.communicator.socket.getInputStream()))
-                    br.readLine()
-                }
+                channel.receive()
             }
         } ?: throw WinByTimeout(if (first == player1) GameEndings.SECOND else GameEndings.FIRST)
         field = Json.decodeFromString(playersTurn.removePrefix("SOCKET STEP "))

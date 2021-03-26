@@ -47,3 +47,5 @@ data class Field(val width: Int, val height: Int, val position: List<Int>, val o
 data class Stats(val name: String, val points: Int)
 @Serializable
 data class JoinLobbyResponse(val DATA: LobbyInfo, val SUCCESS: Boolean)
+@Serializable
+data class EndGameInfo(var result: String, val width: Int, val height: Int, val position: List<Int>, val opponentPosition: List<Int>, val barriers: Set<Array<Array<Int>>>)

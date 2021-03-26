@@ -7,12 +7,17 @@ import java.net.Socket
 import java.net.SocketException
 import java.sql.*
 import java.util.*
+import kotlin.concurrent.thread
 import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.random.Random
 import kotlin.system.exitProcess
 //Класс сервера
 
 const val MAX_TURNS = 60
+
+fun log(msg : String) {
+    println("[${Thread.currentThread().name}] $msg")
+}
 
 class Server private constructor(argsParser: ArgsParser){
 
@@ -52,7 +57,7 @@ class Server private constructor(argsParser: ArgsParser){
                         communicator.sendData(Json.encodeToString(Message("OK")))
                     }
                     "GET STATS" -> getStats()
-                    else -> { println("Unknown command: ${vls[0]} from ${socket.inetAddress}") }
+                    else -> {  }
                 }
             }
         }
@@ -73,7 +78,10 @@ class Server private constructor(argsParser: ArgsParser){
             myLobby?.removePLayer(this)
             communicator.sendData(Json.encodeToString(Message("BYE")))
             communicator.stop()
-            println("User [${socket.inetAddress}:${socket.port}] disconnected")
+            val id = if (name==null) "[" + socket.inetAddress.toString() + socket.port.toString() + "]"
+            else name
+            println("User $id disconnected")
+            connectedClient.remove(this)
         }
 
         private fun getLobby() {
@@ -197,6 +205,7 @@ class Server private constructor(argsParser: ArgsParser){
     inner class Lobby(private val lobbyInfo: LobbyInfo) {
         private var expectingPlayer: ConnectedClient? = null
         var isPlaying = false
+        private val coroutineScope = CoroutineScope(EmptyCoroutineContext)
 
         fun addPlayer(player : ConnectedClient) {
             println("player ${player.name} joined the lobby ${lobbyInfo.name}")
@@ -206,14 +215,15 @@ class Server private constructor(argsParser: ArgsParser){
             }
             else {
                 isPlaying = true
-                val game =  gamesContext.launch(Dispatchers.Unconfined) {
-                    println("COROUTINE STARTED")
+                log("COROUTINE STARTING")
+                val game = coroutineScope.launch {
+                    log("FUCK YEAH!")
                     playGame(expectingPlayer!!, player, lobbyInfo)
                 }
-                gamesContext.launch {
+                coroutineScope.launch {
                     game.join()
-                    stmt.execute("DELETE FROM lobbies WHERE ID = '${lobbyInfo._id}'")
-                    lobbies.remove(lobbyInfo._id?.toInt())
+//                    stmt.execute("DELETE FROM lobbies WHERE ID = '${lobbyInfo._id}'")
+//                    lobbies.remove(lobbyInfo._id?.toInt())
                 }
             }
         }
@@ -228,7 +238,7 @@ class Server private constructor(argsParser: ArgsParser){
     private val connectedClient = mutableListOf<ConnectedClient>() //список подключенных клиентов (онлайн)
     private val lobbies: MutableMap<Int, Lobby> = mutableMapOf()
     private var expectingClient: ConnectedClient? = null
-    private val communicationProcess : Job
+    private val communicationProcess : Thread
     private val serverSocket: ServerSocket
     private val connection : Connection//соединение с mysql
     private val port: Int = argsParser.serverPort
@@ -237,7 +247,6 @@ class Server private constructor(argsParser: ArgsParser){
     private val dbName = argsParser.dbName //название БД в mariaDB
     private val stmt: Statement
     private var stop = false
-    var gamesContext : CoroutineScope
 
     init{
         serverSocket = ServerSocket(port)
@@ -271,7 +280,7 @@ class Server private constructor(argsParser: ArgsParser){
         println("For exit type \"exit\"")
         updateLobbies()
 
-        communicationProcess = GlobalScope.launch {
+        communicationProcess = thread {
             try {
                 while (!stop) {
                     acceptClient()
@@ -288,7 +297,6 @@ class Server private constructor(argsParser: ArgsParser){
                 }
             }
         }
-
         GlobalScope.launch {
             while (!stop) {
                 val msg = readLine()
@@ -300,7 +308,7 @@ class Server private constructor(argsParser: ArgsParser){
             }
         }
         runBlocking {
-            gamesContext = CoroutineScope(EmptyCoroutineContext)
+            log("Waiting for join")
             communicationProcess.join()
         }
     }
@@ -328,9 +336,9 @@ class Server private constructor(argsParser: ArgsParser){
     }
 
     private fun acceptClient() {
-        println("Ожидание подключения")
+        log("Ожидание подключения")
         val s = serverSocket.accept()
-        println("Новый клиент подключен [${s.inetAddress}:${s.port}]")
+        log("Новый клиент подключен [${s.inetAddress}:${s.port}]")
         connectedClient.add(ConnectedClient(s))
     }
 
@@ -342,16 +350,17 @@ class Server private constructor(argsParser: ArgsParser){
         else {
             Pair(player2, player1)
         }
+        log("Game started")
         val sql = when(Game(first, second, lobbyInfo).startGame()) {
             GameEndings.FIRST ->
-            {"INSERT INTO ${dbName}.game_results (`first`, `second`, `result`) " +
+            {"INSERT INTO game_results (`first`, `second`, `result`) " +
                     "VALUES ('${first.name}', '${second.name}', 'first')"}
             GameEndings.SECOND ->
-            {"INSERT INTO ${dbName}`game_results` (`first`, `second`, `result`) " +
+            {"INSERT INTO game_results (`first`, `second`, `result`) " +
                     "VALUES ('${first.name}', '${second.name}', 'second')"}
             GameEndings.DRAW ->
-            {"INSERT INTO ${dbName}`game_results` (`first`, `second`, `result`) " +
-                    "VALUES ('${first.name}', '${second.name}', 'draw')"}
+            { "INSERT INTO game_results (`first`, `second`, `result`) " +
+                    "VALUES ('${first.name}', '${second.name}', 'draw')" }
         }
         stmt.executeQuery(sql)
     }
