@@ -2,11 +2,13 @@ import kotlinx.coroutines.*
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import java.io.File
 import java.net.ServerSocket
 import java.net.Socket
 import java.net.SocketException
 import java.sql.*
 import java.util.*
+import kotlin.collections.ArrayList
 import kotlin.concurrent.thread
 import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.random.Random
@@ -42,7 +44,7 @@ class Server private constructor(argsParser: ArgsParser){
         }
 
         private fun dataReceived(data: String){
-            val vls = data.split(Regex("(?<=[A-Z]) (?=\\{.+\\})"),limit = 2)
+            val vls = data.split(Regex("(?<=[A-Z]) (?=\\{.+})"),limit = 2)
             if (vls.isNotEmpty()){
                 println(data)
                 when (vls[0]){
@@ -157,35 +159,56 @@ class Server private constructor(argsParser: ArgsParser){
             }
             if (myLobby != null) {
                 myLobby?.removePLayer(this)
-                communicator.sendData(Json.encodeToString(Message("YOU LEFT PREVIOUS LOBBY")))
+                //communicator.sendData(Json.encodeToString(Message("YOU LEFT PREVIOUS LOBBY")))
             }
             val lobbyID = Json.decodeFromString<LobbyID>(data)
-            if (lobbyID.id == null) {
-                return
-                TODO("Расписание матчей")
-            }
-            val rs = connection.createStatement(ResultSet.TYPE_SCROLL_SENSITIVE, ResultSet.CONCUR_UPDATABLE).executeQuery("SELECT * FROM lobbies WHERE ID = '${lobbyID.id}'")
-            if(rs.next()){
-                val lobbyInfo = LobbyInfo(
-                    rs.getInt("ID").toString(),
-                    rs.getInt("width"),
-                    rs.getInt("height"),
-                    rs.getInt("gameBarrierCount"),
-                    rs.getInt("playerBarrierCount"),
-                    rs.getString("name"),
-                    rs.getInt("playersCount")
-                )
-                if (!lobbies[rs.getInt("ID")]?.isPlaying!!) {
-                    communicator.sendData(Json.encodeToString(JoinLobbyResponse(lobbyInfo, true)))
-                    lobbies[rs.getInt("ID")]?.addPlayer(this)
-                }
-                else{
-                    communicator.sendData(Json.encodeToString(JoinLobbyResponse(LobbyInfo(lobbyID.id, -1, -1, -1, -1, "", -1), false)))
-                }
-            }
-            else {
+            if (lobbyID.id != null) {
                 communicator.sendData(Json.encodeToString(JoinLobbyResponse(LobbyInfo(null, -1, -1, -1, -1, "", -1), false)))
             }
+            else {
+                //TODO("Расписание матчей")
+                val opponent = Schedule.sheet[name]?.get(0) ?: throw Exception("BlaBlaBla")
+                val rs = stmt.executeQuery("SELECT * FROM lobbies WHERE name LIKE '%$name%' AND name LIKE '%$opponent%'")
+                if(rs.next()) {
+                    val lobbyInfo = LobbyInfo(
+                        rs.getInt("ID").toString(),
+                        rs.getInt("width"),
+                        rs.getInt("height"),
+                        rs.getInt("gameBarrierCount"),
+                        rs.getInt("playerBarrierCount"),
+                        rs.getString("name"),
+                        rs.getInt("playersCount")
+                    )
+                    println("Player $name should go to ${lobbyInfo.name} lobby")
+                    if (!lobbies[rs.getInt("ID")]?.isPlaying!!) {
+                        communicator.sendData(Json.encodeToString(JoinLobbyResponse(lobbyInfo, true)))
+                        lobbies[rs.getInt("ID")]?.addPlayer(this)
+                    }
+                }
+            }
+//            val lobbyID = Json.decodeFromString<LobbyID>(data)
+//            val rs = connection.createStatement(ResultSet.TYPE_SCROLL_SENSITIVE, ResultSet.CONCUR_UPDATABLE).executeQuery("SELECT * FROM lobbies WHERE ID = '${lobbyID.id}'")
+//            if(rs.next()){
+//                val lobbyInfo = LobbyInfo(
+//                    rs.getInt("ID").toString(),
+//                    rs.getInt("width"),
+//                    rs.getInt("height"),
+//                    rs.getInt("gameBarrierCount"),
+//                    rs.getInt("playerBarrierCount"),
+//                    rs.getString("name"),
+//                    rs.getInt("playersCount")
+//                )
+//                if (!lobbies[rs.getInt("ID")]?.isPlaying!!) {
+//                    communicator.sendData(Json.encodeToString(JoinLobbyResponse(lobbyInfo, true)))
+//                    lobbies[rs.getInt("ID")]?.addPlayer(this)
+//                }
+//                else{
+//                    communicator.sendData(Json.encodeToString(JoinLobbyResponse(LobbyInfo(lobbyID.id, -1, -1, -1, -1, "", -1), false)))
+//                }
+//            }
+//            else {
+//                communicator.sendData(Json.encodeToString(JoinLobbyResponse(LobbyInfo(null, -1, -1, -1, -1, "", -1), false)))
+//            }
         }
 
         private fun getStats() {
@@ -216,28 +239,32 @@ class Server private constructor(argsParser: ArgsParser){
             else {
                 isPlaying = true
                 log("COROUTINE STARTING")
-                val game = coroutineScope.launch {
-                    log("FUCK YEAH!")
+                Schedule.sheet[player.name]?.removeAt(0)
+                Schedule.sheet[expectingPlayer!!.name]?.removeAt(0)
+                stmt.execute("DELETE FROM lobbies WHERE ID = '${lobbyInfo._id}'")
+                val game = coroutineScope.launch(start = CoroutineStart.DEFAULT) {
                     playGame(expectingPlayer!!, player, lobbyInfo)
                 }
                 coroutineScope.launch {
                     game.join()
-//                    stmt.execute("DELETE FROM lobbies WHERE ID = '${lobbyInfo._id}'")
-//                    lobbies.remove(lobbyInfo._id?.toInt())
+                    removePLayer(player)
+                    removePLayer(expectingPlayer!!)
+                    lobbies.remove(lobbyInfo._id?.toInt())
+                    updateLobbies()
                 }
             }
         }
 
         fun removePLayer(player: ConnectedClient) {
             if (player == expectingPlayer) {
-                expectingClient = null
+                expectingPlayer = null
             }
+            player.myLobby = null
         }
     }
 
     private val connectedClient = mutableListOf<ConnectedClient>() //список подключенных клиентов (онлайн)
     private val lobbies: MutableMap<Int, Lobby> = mutableMapOf()
-    private var expectingClient: ConnectedClient? = null
     private val communicationProcess : Thread
     private val serverSocket: ServerSocket
     private val connection : Connection//соединение с mysql
@@ -278,6 +305,9 @@ class Server private constructor(argsParser: ArgsParser){
         stmt = connection.createStatement()
         println("SERVER STARTED")
         println("For exit type \"exit\"")
+        updateUsers()
+        createSchedule()
+        createLobbies()
         updateLobbies()
 
         communicationProcess = thread {
@@ -310,6 +340,62 @@ class Server private constructor(argsParser: ArgsParser){
         runBlocking {
             log("Waiting for join")
             communicationProcess.join()
+        }
+    }
+
+    private fun createLobbies() {
+        val random = Random(System.currentTimeMillis())
+        for (userId in Schedule.users.indices) {
+            for (opponentId in userId+1 until Schedule.users.size){
+                repeat(Schedule.gamesToPlay) {
+                    val lobbyInfo = LobbyInfo(
+                        null,
+                        random.nextInt(4, 10),
+                        random.nextInt(4, 10),
+                        random.nextInt(1, 5),
+                        random.nextInt(1, 4),
+                        "${Schedule.users[userId]}_vs_${Schedule.users[opponentId]}_$it",
+                        2)
+                    stmt.execute(
+                        "INSERT INTO lobbies VALUES " +
+                                "(null ," +
+                                "${lobbyInfo.width}," +
+                                "${lobbyInfo.height}," +
+                                "${lobbyInfo.gameBarrierCount}," +
+                                "${lobbyInfo.playerBarrierCount}," +
+                                "'${lobbyInfo.name}'," +
+                                "${lobbyInfo.players_count}) ON DUPLICATE KEY UPDATE `name` = '${lobbyInfo.name}'")
+                }
+            }
+        }
+    }
+
+    private fun createSchedule() {
+        var i = 0
+        val size = Schedule.users.size
+        Schedule.users.forEach {
+            Schedule.sheet[it] = ArrayList((size - 1) * Schedule.gamesToPlay)
+        }
+        repeat(size - 1) {
+            Schedule.users.forEach {
+                val index = Schedule.users.indexOf(it)
+                val list = Schedule.sheet[it]
+                repeat(Schedule.gamesToPlay) {
+                    list?.add(Schedule.users[size - index - 1])
+                }
+            }
+            val tmp = Schedule.users[1]
+            for (j in 1 until size-1) {
+                Schedule.users[j] = Schedule.users[j+1]
+            }
+            Schedule.users[size-1] = tmp
+        }
+    }
+
+    private fun updateUsers() {
+        val users = File("build/resources/main/participants_list").readLines()
+        users.forEach {
+            stmt.execute("INSERT INTO user VALUES (null ,'$it') ON DUPLICATE KEY UPDATE `login` = '$it'")
         }
     }
 

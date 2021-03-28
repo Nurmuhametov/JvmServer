@@ -34,8 +34,8 @@ class Game(private val player1: Server.ConnectedClient,
         println("Игра между ${player1.name} и ${player2.name}")
         player1.communicator.addDataReceivedListener(::sendTurn)
         player2.communicator.addDataReceivedListener(::sendTurn)
-        player1.communicator.sendData("SOCKET STARTGAME" + Json.encodeToString(StartGameInfo(true,field.width,field.height,field.position.toList(),field.opponentPosition.toList(),field.barriers)))
-        player2.communicator.sendData("SOCKET STARTGAME" + Json.encodeToString(StartGameInfo(false,field.width,field.height,field.opponentPosition.toList(),field.position.toList(),field.barriers)))
+        player1.communicator.sendData("SOCKET STARTGAME " + Json.encodeToString(StartGameInfo(true,field.width,field.height,field.position.toList(),field.opponentPosition.toList(),field.barriers)))
+        player2.communicator.sendData("SOCKET STARTGAME " + Json.encodeToString(StartGameInfo(false,field.width,field.height,field.opponentPosition.toList(),field.position.toList(),field.barriers)))
         val game = coroutineScope {
             async { playGame() }
         }
