@@ -3,6 +3,8 @@ import java.io.*
 import java.net.Socket
 import java.net.SocketException
 
+
+
 class Communicator(
     var socket: Socket
 ) {
@@ -63,11 +65,11 @@ class Communicator(
         }
     }
 
-    fun start(){
+    fun start(scope: CoroutineScope){
         if (communicationProcess?.isActive == true)
             stop()
         active = true
-        communicationProcess = GlobalScope.launch {
+        communicationProcess = scope.launch(Dispatchers.IO) {
             communicate()
         }
     }

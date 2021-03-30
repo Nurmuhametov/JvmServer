@@ -3,9 +3,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
-import java.io.BufferedReader
 import java.io.File
-import java.io.InputStreamReader
 import java.util.*
 import kotlin.random.Random
 
@@ -31,7 +29,7 @@ class Game(private val player1: Server.ConnectedClient,
 
     suspend fun startGame(): GameEndings {
         log += "Игра между ${player1.name} и ${player2.name}\n"
-        println("Игра между ${player1.name} и ${player2.name}")
+        log("Игра между ${player1.name} и ${player2.name}")
         player1.communicator.addDataReceivedListener(::sendTurn)
         player2.communicator.addDataReceivedListener(::sendTurn)
         player1.communicator.sendData("SOCKET STARTGAME " + Json.encodeToString(StartGameInfo(true,field.width,field.height,field.position.toList(),field.opponentPosition.toList(),field.barriers)))
@@ -47,7 +45,7 @@ class Game(private val player1: Server.ConnectedClient,
     private fun sendTurn(data : String) {
         runBlocking {
             channel.send(data)
-            println("Sent!")
+            log("Sent!")
         }
     }
 

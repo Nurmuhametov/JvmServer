@@ -9,7 +9,6 @@ import java.net.SocketException
 import java.sql.*
 import java.util.*
 import kotlin.collections.ArrayList
-import kotlin.concurrent.thread
 import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.random.Random
 import kotlin.system.exitProcess
@@ -40,7 +39,7 @@ class Server private constructor(argsParser: ArgsParser){
 
         init{
             communicator.addDataReceivedListener(::dataReceived)
-            communicator.start()
+            communicator.start(communicatorsScope)
         }
 
         private fun dataReceived(data: String){
@@ -228,7 +227,6 @@ class Server private constructor(argsParser: ArgsParser){
     inner class Lobby(private val lobbyInfo: LobbyInfo) {
         private var expectingPlayer: ConnectedClient? = null
         var isPlaying = false
-        private val coroutineScope = CoroutineScope(EmptyCoroutineContext)
 
         fun addPlayer(player : ConnectedClient) {
             println("player ${player.name} joined the lobby ${lobbyInfo.name}")
@@ -242,16 +240,12 @@ class Server private constructor(argsParser: ArgsParser){
                 Schedule.sheet[player.name]?.removeAt(0)
                 Schedule.sheet[expectingPlayer!!.name]?.removeAt(0)
                 stmt.execute("DELETE FROM lobbies WHERE ID = '${lobbyInfo._id}'")
-                val game = coroutineScope.launch(start = CoroutineStart.DEFAULT) {
-                    playGame(expectingPlayer!!, player, lobbyInfo)
-                }
-                coroutineScope.launch {
-                    game.join()
-                    removePLayer(player)
+                gamesScope.launch(Dispatchers.Unconfined) { playGame(expectingPlayer!!, player, lobbyInfo) }
+                removePLayer(player)
+                if (expectingPlayer!=null)
                     removePLayer(expectingPlayer!!)
-                    lobbies.remove(lobbyInfo._id?.toInt())
-                    updateLobbies()
-                }
+                lobbies.remove(lobbyInfo._id?.toInt())
+                updateLobbies()
             }
         }
 
@@ -263,9 +257,11 @@ class Server private constructor(argsParser: ArgsParser){
         }
     }
 
+    private val communicatorsScope = CoroutineScope(EmptyCoroutineContext)
+    private val gamesScope = CoroutineScope(EmptyCoroutineContext)
     private val connectedClient = mutableListOf<ConnectedClient>() //список подключенных клиентов (онлайн)
     private val lobbies: MutableMap<Int, Lobby> = mutableMapOf()
-    private val communicationProcess : Thread
+    val communicationProcess : Job
     private val serverSocket: ServerSocket
     private val connection : Connection//соединение с mysql
     private val port: Int = argsParser.serverPort
@@ -307,10 +303,11 @@ class Server private constructor(argsParser: ArgsParser){
         println("For exit type \"exit\"")
         updateUsers()
         createSchedule()
+        createGameResults()
         createLobbies()
         updateLobbies()
 
-        communicationProcess = thread {
+        communicationProcess = GlobalScope.launch {
             try {
                 while (!stop) {
                     acceptClient()
@@ -327,7 +324,7 @@ class Server private constructor(argsParser: ArgsParser){
                 }
             }
         }
-        GlobalScope.launch {
+        GlobalScope.launch(Dispatchers.IO) {
             while (!stop) {
                 val msg = readLine()
                 if(msg == "exit") {
@@ -337,13 +334,20 @@ class Server private constructor(argsParser: ArgsParser){
                 else println("For exit type \"exit\"")
             }
         }
-        runBlocking {
-            log("Waiting for join")
-            communicationProcess.join()
+    }
+
+    private fun createGameResults() {
+        try {
+            stmt.execute("SELECT *  FROM game_results")
+        }
+        catch (ex: Exception) {
+            stmt.execute("CREATE TABLE game_results ( `first` VARCHAR(20) NOT NULL , `second` VARCHAR(20) NOT NULL , `result` SET('first','second','draw') NOT NULL ) ENGINE = InnoDB;")
+            stmt.execute("ALTER TABLE game_results ADD FOREIGN KEY (`first`) REFERENCES `user`(`login`) ON DELETE RESTRICT ON UPDATE RESTRICT; ALTER TABLE `game_results` ADD FOREIGN KEY (`second`) REFERENCES `user`(`login`) ON DELETE RESTRICT ON UPDATE RESTRICT;")
         }
     }
 
     private fun createLobbies() {
+        stmt.execute("CREATE TABLE lobbies IF NOT EXISTS ( `ID` INT UNSIGNED NOT NULL AUTO_INCREMENT , `width` INT UNSIGNED NOT NULL , `height` INT UNSIGNED NOT NULL , `gameBarrierCount` INT UNSIGNED NOT NULL , `playerBarrierCount` INT UNSIGNED NOT NULL , `name` VARCHAR(100) NOT NULL , `playersCount` INT UNSIGNED NOT NULL , PRIMARY KEY (`ID`), UNIQUE `name` (`name`)) ENGINE = InnoDB")
         val random = Random(System.currentTimeMillis())
         for (userId in Schedule.users.indices) {
             for (opponentId in userId+1 until Schedule.users.size){
@@ -371,7 +375,6 @@ class Server private constructor(argsParser: ArgsParser){
     }
 
     private fun createSchedule() {
-        var i = 0
         val size = Schedule.users.size
         Schedule.users.forEach {
             Schedule.sheet[it] = ArrayList((size - 1) * Schedule.gamesToPlay)
@@ -393,6 +396,7 @@ class Server private constructor(argsParser: ArgsParser){
     }
 
     private fun updateUsers() {
+        stmt.execute("CREATE TABLE user IF NOT EXISTS ( `ID` INT UNSIGNED NOT NULL AUTO_INCREMENT , `login` VARCHAR(20) NOT NULL , PRIMARY KEY (`ID`), UNIQUE `login` (`login`)) ENGINE = InnoDB;")
         val users = File("build/resources/main/participants_list").readLines()
         users.forEach {
             stmt.execute("INSERT INTO user VALUES (null ,'$it') ON DUPLICATE KEY UPDATE `login` = '$it'")
