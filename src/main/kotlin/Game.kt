@@ -3,9 +3,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
-import java.io.BufferedReader
 import java.io.File
-import java.io.InputStreamReader
 import java.util.*
 import kotlin.random.Random
 
@@ -39,19 +37,16 @@ class Game(private val player1: Server.ConnectedClient,
         val game = coroutineScope {
             async { playGame() }
         }
-        player1.communicator.removeDataReceivedListener(::sendTurn)
-        player2.communicator.removeDataReceivedListener(::sendTurn)
+        log("Game ended!")
         return game.await()
     }
 
-    private fun sendTurn(data : String) {
-        runBlocking {
-            channel.send(data)
-            println("Sent!")
-        }
+    private suspend fun sendTurn(data : String) {
+        channel.send(data)
+        println("Sent: $data")
     }
 
-    private fun playGame() : GameEndings {
+    private suspend fun playGame() : GameEndings {
         var first = player1
         var second = player2
         var stillPlaying = true
@@ -62,6 +57,8 @@ class Game(private val player1: Server.ConnectedClient,
                 first = second
                 second = tmp
             }
+            player1.communicator.removeDataReceivedListener(::sendTurn)
+            player2.communicator.removeDataReceivedListener(::sendTurn)
         }
         catch (ex: WinByTimeout) {
             when(ex.gameEndings) {
@@ -109,17 +106,18 @@ class Game(private val player1: Server.ConnectedClient,
         loser.communicator.sendData("SOCKET ENDGAME " + Json.encodeToString(endGameInfo))
     }
 
-    private fun makeTurn(first: Server.ConnectedClient, second: Server.ConnectedClient) : Boolean {
+    private suspend fun makeTurn(first: Server.ConnectedClient, second: Server.ConnectedClient) : Boolean {
         log += if (first == player1) {
             Json.encodeToString(field)
         } else Json.encodeToString(swapPositions())
         log += "\n"
-        val playersTurn = runBlocking {
+        val playersTurn = CoroutineScope(currentCoroutineContext()).async {
             withTimeoutOrNull(120000) {
                 channel.receive()
             }
-        } ?: throw WinByTimeout(if (first == player1) GameEndings.SECOND else GameEndings.FIRST)
-        field = Json.decodeFromString(playersTurn.removePrefix("SOCKET STEP "))
+        }
+        val turnResult = playersTurn.await() ?: throw WinByTimeout(if (first == player1) GameEndings.SECOND else GameEndings.FIRST)
+        field = Json.decodeFromString(turnResult.removePrefix("SOCKET STEP "))
         if(isEnded(first)) return false
         field = swapPositions()
         second.communicator.sendData("SOCKET STEP " + Json.encodeToString(field))
@@ -147,6 +145,7 @@ class Game(private val player1: Server.ConnectedClient,
     }
 
     private fun generateRandomField() : Field {
+        log("Generating field with width ${lobbyInfo.width}, height ${lobbyInfo.height} and ${lobbyInfo.gameBarrierCount} barriers")
         val random = Random(System.currentTimeMillis())
         val position1 = Pair(0, random.nextInt(0, lobbyInfo.width - 1))
         val position2 = Pair(lobbyInfo.height - 1, random.nextInt(0 , lobbyInfo.width) - 1)
@@ -154,7 +153,7 @@ class Game(private val player1: Server.ConnectedClient,
         while (barriers.size != lobbyInfo.gameBarrierCount) {
             val x1 = random.nextInt(0, lobbyInfo.height - 1)
             val y1 = random.nextInt(0, lobbyInfo.width - 1)
-            val newObstacle = randomObstacleFromCell(Position(x1, y1), random.nextInt(0,7))
+            val newObstacle = randomObstacleFromCell(Position(x1, y1), random.nextInt(0,8))
             if(!isLegalObstacle(newObstacle,barriers)) continue
             val tempSet = mutableSetOf<Obstacle>()
             tempSet.addAll(barriers)

@@ -4,26 +4,26 @@ import java.net.Socket
 import java.net.SocketException
 
 class Communicator(
-    var socket: Socket
+    private var socket: Socket
 ) {
 
     private var active: Boolean
     private var communicationProcess: Job? = null
-    private var dataReceivedListeners = mutableListOf<(String)->Unit>()
+    private var dataReceivedListeners = mutableListOf<suspend (String)->Unit>()
     private val isAlive: Boolean
         get() = active && socket.isConnected
     init {
         active = true
     }
 
-    fun addDataReceivedListener(l: (String)->Unit){
+    fun addDataReceivedListener(l: suspend (String) -> Unit){
         dataReceivedListeners.add(l)
     }
-    fun removeDataReceivedListener(l: (String)->Unit){
+    fun removeDataReceivedListener(l: suspend (String)->Unit){
         dataReceivedListeners.remove(l)
     }
 
-    private fun communicate(){
+    private suspend fun communicate(){
         while (isAlive){
             try{
                 val value = receiveData()
@@ -34,7 +34,11 @@ class Communicator(
                 }
             } catch (e: SocketException){
                 active = false
-                if (!socket.isClosed) socket.close()
+                if (!socket.isClosed) {
+                    CoroutineScope(currentCoroutineContext()).launch(Dispatchers.IO) {
+                        socket.close()
+                    }
+                }
             }
         }
     }

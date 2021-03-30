@@ -9,8 +9,8 @@ import java.net.SocketException
 import java.sql.*
 import java.util.*
 import kotlin.collections.ArrayList
-import kotlin.concurrent.thread
 import kotlin.coroutines.EmptyCoroutineContext
+import kotlin.math.ln
 import kotlin.random.Random
 import kotlin.system.exitProcess
 //Класс сервера
@@ -242,13 +242,15 @@ class Server private constructor(argsParser: ArgsParser){
                 Schedule.sheet[player.name]?.removeAt(0)
                 Schedule.sheet[expectingPlayer!!.name]?.removeAt(0)
                 stmt.execute("DELETE FROM lobbies WHERE ID = '${lobbyInfo._id}'")
-                val game = coroutineScope.launch(start = CoroutineStart.DEFAULT) {
+                val game = coroutineScope.launch {
                     playGame(expectingPlayer!!, player, lobbyInfo)
                 }
-                coroutineScope.launch {
+                coroutineScope.launch(Dispatchers.IO) {
                     game.join()
                     removePLayer(player)
-                    removePLayer(expectingPlayer!!)
+                    if (expectingPlayer!=null) {
+                        removePLayer(expectingPlayer!!)
+                    }
                     lobbies.remove(lobbyInfo._id?.toInt())
                     updateLobbies()
                 }
@@ -265,7 +267,7 @@ class Server private constructor(argsParser: ArgsParser){
 
     private val connectedClient = mutableListOf<ConnectedClient>() //список подключенных клиентов (онлайн)
     private val lobbies: MutableMap<Int, Lobby> = mutableMapOf()
-    private val communicationProcess : Thread
+    val communicationProcess : Job
     private val serverSocket: ServerSocket
     private val connection : Connection//соединение с mysql
     private val port: Int = argsParser.serverPort
@@ -311,7 +313,7 @@ class Server private constructor(argsParser: ArgsParser){
         createLobbies()
         updateLobbies()
 
-        communicationProcess = thread {
+        communicationProcess = GlobalScope.launch {
             try {
                 while (!stop) {
                     acceptClient()
@@ -328,7 +330,7 @@ class Server private constructor(argsParser: ArgsParser){
                 }
             }
         }
-        GlobalScope.launch {
+        GlobalScope.launch(Dispatchers.IO) {
             while (!stop) {
                 val msg = readLine()
                 if(msg == "exit") {
@@ -338,10 +340,10 @@ class Server private constructor(argsParser: ArgsParser){
                 else println("For exit type \"exit\"")
             }
         }
-        runBlocking {
-            log("Waiting for join")
-            communicationProcess.join()
-        }
+//        runBlocking {
+//            log("Waiting for join")
+//            communicationProcess.join()
+//        }
     }
 
     private fun createGameResults() {
@@ -359,11 +361,14 @@ class Server private constructor(argsParser: ArgsParser){
         for (userId in Schedule.users.indices) {
             for (opponentId in userId+1 until Schedule.users.size){
                 repeat(Schedule.gamesToPlay) {
+                    val width = random.nextInt(5, 10)
+                    val height = random.nextInt(5, 10)
+                    val gameBarrierCount = (ln((width+height)/2.0-1) / ln(2.0)).toInt()
                     val lobbyInfo = LobbyInfo(
                         null,
-                        random.nextInt(4, 10),
-                        random.nextInt(4, 10),
-                        random.nextInt(1, 5),
+                        width,
+                        height,
+                        gameBarrierCount,
                         random.nextInt(1, 4),
                         "${Schedule.users[userId]}_vs_${Schedule.users[opponentId]}_$it",
                         2)
