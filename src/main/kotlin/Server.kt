@@ -307,7 +307,7 @@ class Server private constructor(argsParser: ArgsParser){
         println("For exit type \"exit\"")
         updateUsers()
         createSchedule()
-        createGameRuselts()
+        createGameResults()
         createLobbies()
         updateLobbies()
 
@@ -344,18 +344,17 @@ class Server private constructor(argsParser: ArgsParser){
         }
     }
 
-    private fun createGameRuselts() {
+    private fun createGameResults() {
         try {
             stmt.execute("SELECT * FROM game_results")
         }
         catch (ex: Exception) {
-            stmt.execute("CREATE TABLE ame_results ( `first` VARCHAR(20) NOT NULL , `second` VARCHAR(20) NOT NULL , `result` SET('first','second','draw') NOT NULL ) ENGINE = InnoDB;")
-            stmt.execute("ALTER TABLE game_results ADD FOREIGN KEY (`first`) REFERENCES `user`(`login`) ON DELETE RESTRICT ON UPDATE RESTRICT; ALTER TABLE `game_results` ADD FOREIGN KEY (`second`) REFERENCES `user`(`login`) ON DELETE RESTRICT ON UPDATE RESTRICT;")
+            stmt.execute("CREATE TABLE game_results ( `first` VARCHAR(20) NOT NULL , `second` VARCHAR(20) NOT NULL , `result` SET('first','second','draw') NOT NULL, CONSTRAINT `first` FOREIGN KEY (first) REFERENCES user(login) ON DELETE RESTRICT ON UPDATE RESTRICT, CONSTRAINT `second` FOREIGN KEY (second) REFERENCES user(login) ON DELETE RESTRICT ON UPDATE RESTRICT) ENGINE = InnoDB;")
         }
     }
 
     private fun createLobbies() {
-        stmt.execute("CREATE TABLE lobbies IF NOT EXISTS ( `ID` INT UNSIGNED NOT NULL AUTO_INCREMENT , `width` INT UNSIGNED NOT NULL , `height` INT UNSIGNED NOT NULL , `gameBarrierCount` INT UNSIGNED NOT NULL , `playerBarrierCount` INT UNSIGNED NOT NULL , `name` VARCHAR(100) NOT NULL , `playersCount` INT UNSIGNED NOT NULL , PRIMARY KEY (`ID`), UNIQUE `name` (`name`)) ENGINE = InnoDB;")
+        stmt.execute("CREATE TABLE IF NOT EXISTS lobbies ( `ID` INT UNSIGNED NOT NULL AUTO_INCREMENT , `width` INT UNSIGNED NOT NULL , `height` INT UNSIGNED NOT NULL , `gameBarrierCount` INT UNSIGNED NOT NULL , `playerBarrierCount` INT UNSIGNED NOT NULL , `name` VARCHAR(100) NOT NULL , `playersCount` INT UNSIGNED NOT NULL , PRIMARY KEY (`ID`), UNIQUE `name` (`name`)) ENGINE = InnoDB;")
         val random = Random(System.currentTimeMillis())
         for (userId in Schedule.users.indices) {
             for (opponentId in userId+1 until Schedule.users.size){
@@ -383,7 +382,6 @@ class Server private constructor(argsParser: ArgsParser){
     }
 
     private fun createSchedule() {
-        var i = 0
         val size = Schedule.users.size
         Schedule.users.forEach {
             Schedule.sheet[it] = ArrayList((size - 1) * Schedule.gamesToPlay)
@@ -405,7 +403,7 @@ class Server private constructor(argsParser: ArgsParser){
     }
 
     private fun updateUsers() {
-        stmt.execute("CREATE TABLE user IF NOT EXISTS ( `ID` INT UNSIGNED NOT NULL AUTO_INCREMENT , `login` VARCHAR(20) NOT NULL , PRIMARY KEY (`ID`), UNIQUE `login` (`login`)) ENGINE = InnoDB;")
+        stmt.execute("CREATE TABLE IF NOT EXISTS user ( `ID` INT UNSIGNED NOT NULL AUTO_INCREMENT , `login` VARCHAR(20) NOT NULL , PRIMARY KEY (`ID`), UNIQUE `login` (`login`)) ENGINE = InnoDB;")
         val users = File("build/resources/main/participants_list").readLines()
         users.forEach {
             stmt.execute("INSERT INTO user VALUES (null ,'$it') ON DUPLICATE KEY UPDATE `login` = '$it'")
