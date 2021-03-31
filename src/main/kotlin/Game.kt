@@ -155,7 +155,7 @@ class Game(private val player1: Server.ConnectedClient,
             val y1 = random.nextInt(0, lobbyInfo.width - 1)
             val newObstacle = randomObstacleFromCell(Position(x1, y1), random.nextInt(0,8))
             if(!isLegalObstacle(newObstacle,barriers)) continue
-            val tempSet = mutableSetOf<Obstacle>()
+            val tempSet = mutableListOf<Obstacle>()
             tempSet.addAll(barriers)
             tempSet.add(newObstacle)
             if(!(isPathExists(position1, tempSet) && isPathExists(position2, tempSet))) continue
@@ -180,7 +180,7 @@ class Game(private val player1: Server.ConnectedClient,
         })
     }
 
-    private fun isPathExists(position: Position, barriers: Set<Obstacle>) : Boolean {
+    private fun isPathExists(position: Position, barriers: Iterable<Obstacle>) : Boolean {
         val goal = if(position.first == 1) lobbyInfo.height else 1
         val queue = LinkedList(mutableListOf(position))
         val visitedCells = mutableListOf(position)
@@ -196,7 +196,7 @@ class Game(private val player1: Server.ConnectedClient,
         return false
     }
 
-    private fun expandMoves(position: Position, barriers: Set<Obstacle>) : List<Position> {
+    private fun expandMoves(position: Position, barriers: Iterable<Obstacle>) : List<Position> {
         val moves = listOf(Position(position.first + 1, position.second), 
             Position(position.first, position.second + 1), 
             Position(position.first - 1, position.second), 
@@ -204,7 +204,7 @@ class Game(private val player1: Server.ConnectedClient,
         return moves.filter { isLegalMove(position, it, barriers) }
     }
 
-    private fun isLegalMove(currentPosition: Position, desiredPosition: Position, barriers: Set<Obstacle>) : Boolean {
+    private fun isLegalMove(currentPosition: Position, desiredPosition: Position, barriers: Iterable<Obstacle>) : Boolean {
         if (desiredPosition.first <= 0 || desiredPosition.first > lobbyInfo.height || desiredPosition.second <= 0 ||
                 desiredPosition.second > lobbyInfo.width) return false
         if (barriers.any { it.stepOverObstacle(currentPosition, desiredPosition) }) return false

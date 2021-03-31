@@ -340,10 +340,6 @@ class Server private constructor(argsParser: ArgsParser){
                 else println("For exit type \"exit\"")
             }
         }
-//        runBlocking {
-//            log("Waiting for join")
-//            communicationProcess.join()
-//        }
     }
 
     private fun createGameResults() {
